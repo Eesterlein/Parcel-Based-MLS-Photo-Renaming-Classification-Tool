@@ -125,11 +125,5 @@ The application uses a rules-first approach with ML fallback:
 
 See `TECHNICAL_OVERVIEW.md` for detailed information about the classification system.
 
-## License
 
-[Add your license here]
-
-## Contributing
-
-[Add contribution guidelines here]
 
