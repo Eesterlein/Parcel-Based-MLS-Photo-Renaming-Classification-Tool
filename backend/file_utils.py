@@ -1,9 +1,14 @@
 """File saving and naming utilities."""
 import shutil
+import subprocess
 from pathlib import Path
 from typing import Optional
 import logging
-from PIL import Image
+from io import BytesIO
+from PIL import Image, ImageFile
+
+# Enable truncated image loading to handle partially malformed WEBP files
+ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 logger = logging.getLogger(__name__)
 
@@ -133,33 +138,73 @@ def rename_pdf(pdf_path: Path, account_no: str, output_dir: Path) -> Optional[Pa
 
 def convert_to_jpeg(source_path: Path, output_dir: Path) -> Optional[Path]:
     """
-    Convert image file to JPEG format.
+    Convert image file to JPEG format silently with RealWare compatibility.
+    
+    Converts non-JPEG images (WEBP, PNG, JFIF, etc.) to baseline JPEG format.
+    Special handling for WEBP files: optimization is disabled to prevent Pillow bugs.
+    Ensures compatibility with RealWare by:
+    - Converting to RGB mode
+    - Saving as baseline JPEG (not progressive)
+    - Stripping ICC profiles and metadata
+    - Using high quality settings (quality=95)
+    - Optimization and subsampling only applied to non-WEBP images
+    - Creating JFIF-compatible JPEG files
+    
+    Saves converted image only to output directory, original file remains untouched.
     
     Args:
         source_path: Path to source image file
-        output_dir: Directory to save converted JPEG
+        output_dir: Directory to save converted JPEG (processed folder)
         
     Returns:
         Full path to converted JPEG file, or None if failed
     """
+    # Get original extension for logging (before try block for error handling)
+    original_ext = source_path.suffix.upper()
+    is_webp = original_ext in ['.WEBP', '.webp']
+    
     try:
         # Ensure output directory exists
         output_dir.mkdir(parents=True, exist_ok=True)
         
-        # Load image
-        img = Image.open(source_path)
+        # Force full pixel decode with robust fallback path for malformed WEBP files
+        source_img = None
+        img = None
         
-        # Convert to RGB if necessary (handles RGBA, P, etc.)
-        if img.mode != 'RGB':
-            # Create white background for transparency
-            rgb_img = Image.new('RGB', img.size, (255, 255, 255))
-            if img.mode == 'RGBA':
-                rgb_img.paste(img, mask=img.split()[3])  # Use alpha channel as mask
+        # PRIMARY decode path
+        try:
+            source_img = Image.open(source_path)
+            source_img.load()  # FORCE full pixel decode immediately
+        except Exception as e:
+            # FALLBACK decode path for malformed WEBPs
+            logger.warning(f"Primary WEBP decode failed, attempting fallback: {source_path.name} ({e})")
+            try:
+                with open(source_path, "rb") as f:
+                    raw = f.read()
+                source_img = Image.open(BytesIO(raw))
+                source_img.load()
+            except Exception as e2:
+                logger.error(f"WEBP decode failed after fallback: {source_path.name} ({e2})")
+                return None
+        
+        # Convert to RGB only after decode succeeds
+        try:
+            if source_img.mode == "RGBA":
+                img = Image.new("RGB", source_img.size, (255, 255, 255))
+                img.paste(source_img, mask=source_img.split()[3])
             else:
-                rgb_img.paste(img)
-            img = rgb_img
+                img = source_img.convert("RGB")
+            
+            img.load()  # Ensure pixels are fully materialized
+        finally:
+            # Close source image after conversion
+            if source_img is not None:
+                try:
+                    source_img.close()
+                except Exception:
+                    pass
         
-        # Generate output filename (same name but .jpg extension)
+        # Generate output filename (same name but .JPG extension)
         base_name = source_path.stem
         output_filename = f"{base_name}.JPG"
         output_path = output_dir / output_filename
@@ -171,14 +216,70 @@ def convert_to_jpeg(source_path: Path, output_dir: Path) -> Optional[Path]:
             output_path = output_dir / output_filename
             counter += 1
         
-        # Save as JPEG with high quality
-        img.save(output_path, 'JPEG', quality=95)
+        # Save as baseline JPEG with RealWare-compatible settings
+        save_kwargs = dict(
+            format="JPEG",
+            quality=95,
+            progressive=False,  # Baseline JPEG, not progressive - required for RealWare
+            exif=None,          # Strip EXIF metadata
+            icc_profile=None    # Strip ICC color profiles
+        )
         
-        logger.info(f"Converted to JPEG: {source_path.name} -> {output_path.name}")
+        # Pillow bug: WEBP-derived images crash with optimize/subsampling
+        if not is_webp:
+            save_kwargs["optimize"] = True
+            save_kwargs["subsampling"] = 0
+        
+        img.save(output_path, **save_kwargs)
+        
+        # Log conversion with format: "Converted WEBP → JPG: filename.webp"
+        logger.info(f"Converted {original_ext} → JPG: {source_path.name}")
         return output_path
         
     except Exception as e:
-        logger.error(f"Error converting image {source_path} to JPEG: {e}")
+        error_msg = str(e)
+        
+        if is_webp:
+            logger.warning(
+                f"Pillow WEBP conversion failed, attempting ImageMagick fallback: {source_path.name} ({error_msg})"
+            )
+            
+            try:
+                output_dir.mkdir(parents=True, exist_ok=True)
+                output_path = output_dir / f"{source_path.stem}.JPG"
+                
+                # Handle filename collisions
+                counter = 1
+                while output_path.exists():
+                    output_path = output_dir / f"{source_path.stem}_{counter}.JPG"
+                    counter += 1
+                
+                # ImageMagick command
+                subprocess.run(
+                    [
+                        "magick",
+                        str(source_path),
+                        "-strip",
+                        "-colorspace", "sRGB",
+                        "-quality", "95",
+                        "-interlace", "None",
+                        str(output_path)
+                    ],
+                    check=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL
+                )
+                
+                logger.info(f"Converted WEBP → JPG via ImageMagick: {source_path.name}")
+                return output_path
+                
+            except Exception as fallback_error:
+                logger.error(
+                    f"ImageMagick fallback failed for {source_path.name}: {fallback_error}"
+                )
+                return None
+        
+        logger.error(f"Error converting image {source_path.name} to JPEG: {error_msg}")
         return None
 
 

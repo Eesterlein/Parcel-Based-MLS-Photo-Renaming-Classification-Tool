@@ -25,8 +25,8 @@ def process_folder(
     Workflow:
     1. Extract parcel number from folder name
     2. Match parcel number to account number via CSV
-    3. Scan folder for image files
-    4. Validate images (JPEG/JPG only)
+    3. Scan folder for image files and convert non-JPEG to JPEG (saved to processed folder)
+    4. Validate images (all are now JPEG/JPG)
     5. Classify each image by room type
     6. Rename files according to naming convention
     7. Copy processed images to output location
@@ -92,32 +92,38 @@ def process_folder(
         else:
             logger.warning(f"Skipping PDF rename (no account number): {pdf_file.name}")
     
-    # Step 3: Scan folder for image files and convert non-JPEG images
+    # Step 3: Scan folder for image files and convert non-JPEG images to processed folder
     logger.info(f"Scanning folder for image files: {folder}")
-    image_extensions = ['.jpg', '.jpeg', '.JPG', '.JPEG', '.png', '.PNG', '.gif', '.GIF', '.bmp', '.BMP', '.tiff', '.TIFF', '.webp', '.WEBP']
+    image_extensions = ['.jpg', '.jpeg', '.JPG', '.JPEG', '.png', '.PNG', '.gif', '.GIF', '.bmp', '.BMP', '.tiff', '.TIFF', '.webp', '.WEBP', '.jfif', '.JFIF']
     jpeg_extensions = ['.jpg', '.jpeg', '.JPG', '.JPEG']
     image_files = []
-    converted_files = []
+    converted_count = 0
     
-    # First, convert non-JPEG images to JPEG
+    # Process each image file
     for file_path in folder.iterdir():
-        if file_path.is_file():
-            suffix_lower = file_path.suffix.lower()
-            if suffix_lower in image_extensions and suffix_lower not in jpeg_extensions:
-                logger.info(f"Converting non-JPEG image to JPEG: {file_path.name}")
-                converted_path = convert_to_jpeg(file_path, folder)
-                if converted_path:
-                    converted_files.append(converted_path)
-                    logger.info(f"Converted: {file_path.name} -> {converted_path.name}")
-                else:
-                    errors.append(f"Failed to convert image: {file_path.name}")
-    
-    # Now scan for JPEG files (including newly converted ones)
-    for file_path in folder.iterdir():
-        if file_path.is_file() and file_path.suffix.lower() in jpeg_extensions:
+        if not file_path.is_file():
+            continue
+            
+        suffix_lower = file_path.suffix.lower()
+        
+        # Skip if not an image file
+        if suffix_lower not in image_extensions:
+            continue
+        
+        # If already JPEG, use original file
+        if suffix_lower in jpeg_extensions:
             image_files.append(file_path)
+        else:
+            # Convert non-JPEG images to JPEG and save to processed folder
+            converted_path = convert_to_jpeg(file_path, output)
+            if converted_path:
+                image_files.append(converted_path)
+                converted_count += 1
+            else:
+                errors.append(f"Failed to convert image: {file_path.name}")
+                skipped_files.append(str(file_path.name))
     
-    logger.info(f"Found {len(image_files)} JPEG image files ({len(converted_files)} converted from other formats)")
+    logger.info(f"Found {len(image_files)} JPEG image files ({converted_count} converted from other formats)")
     
     if not image_files:
         errors.append("No image files found in folder")
