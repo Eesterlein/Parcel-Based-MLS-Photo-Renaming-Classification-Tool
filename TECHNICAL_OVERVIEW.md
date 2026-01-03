@@ -1,6 +1,6 @@
 # Technical Architecture Overview
 
-## 2. High-Level Architecture
+##  High-Level Architecture
 
 ### Application Type
 This is a local desktop application built with Python and tkinter. The application runs entirely on the user's machine with no web server, cloud services, or internet dependency. All processing occurs locally using files already present on the user's filesystem.
@@ -31,7 +31,7 @@ The application follows a single-process, event-driven architecture:
 - **Single executable target**: The application is designed to be packaged with PyInstaller into a standalone Windows executable (.exe) for deployment.
 - **Stateless processing**: Each folder processing operation is independent. No state is maintained between runs.
 
-## 3. Key Python Packages & Libraries Used
+## Key Python Packages & Libraries Used
 
 ### Core Dependencies
 
@@ -77,7 +77,7 @@ The application follows a single-process, event-driven architecture:
 - **Usage**: Model downloading and caching from Hugging Face
 - **Why chosen**: Handles automatic model download and local caching. Used by transformers when loading the CLIP model for the first time.
 
-## 4. Image Classification Approach
+## Image Classification Approach
 
 ### Overall Strategy: Rules-First with ML Fallback
 
@@ -114,7 +114,7 @@ The codebase explicitly avoids using CLIP as a primary classifier. Historical at
 
 The current implementation uses CLIP only for simple object detection queries, and the rule-based logic handles all final decisions. This approach was chosen specifically to avoid the instability observed in earlier CLIP-based classification attempts.
 
-## 5. Room Classification Design
+##  Room Classification Design
 
 ### Final Allowed Room Categories
 
