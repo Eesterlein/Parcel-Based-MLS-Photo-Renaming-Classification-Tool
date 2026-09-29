@@ -2,6 +2,8 @@
 
 A desktop application for processing MLS (Multiple Listing Service) property photos. The application automatically extracts parcel numbers from folder names, matches them to account numbers via CSV lookup, and classifies images by room type using a three-layer classification system (rules-based with ML fallback).
 
+> **Independent project.** This is an independent project and is not an official product of the Gunnison County Assessor's Office or Gunnison County. Any county data it works with comes from publicly available assessor and GIS data, and results may contain errors or out-of-date information. Always verify against official county records.
+
 ## Features
 
 - **Desktop GUI**: User-friendly tkinter-based interface for folder selection and processing
